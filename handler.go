@@ -13,24 +13,23 @@ import (
 
 type Handler interface {
 	Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error)
-	PutNx(ctx context.Context, key, value string, ttl int64) (*clientv3.TxnResponse, clientv3.LeaseID, error)
-	Add(ctx context.Context, prefix, key string, ttl int64) (clientv3.LeaseID, error)
+	Grant(ctx context.Context, ttl int64) (*clientv3.LeaseGrantResponse, error)
+	Put(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error)
+	PutNx(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.TxnResponse, error)
+	Add(ctx context.Context, prefix, key, addr string, opts ...clientv3.OpOption) error
 	Dial(ctx context.Context, servicePrefix string, opts ...grpc.DialOption) (*grpc.ClientConn, error)
 	KeepAlive(ctx context.Context, leaseID clientv3.LeaseID, key string) error
-	Delete(ctx context.Context, key string, opts ...clientv3.OpOption) error
+	Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error)
 }
 
 type Holder struct {
-	Addr   string
 	Client *clientv3.Client
 	Logger zerolog.Logger
 	*EtcdOption
 }
 
 type Option struct {
-	ServerIP   string
-	ServerPort string
-	Logger     zerolog.Logger
+	Logger zerolog.Logger
 	*EtcdOption
 }
 
@@ -51,7 +50,6 @@ func New(opt *Option) (Handler, error) {
 	}
 
 	return &Holder{
-		Addr:       opt.ServerIP + ":" + opt.ServerPort,
 		Client:     c,
 		Logger:     opt.Logger,
 		EtcdOption: opt.EtcdOption,
@@ -62,51 +60,33 @@ func (h *Holder) Get(ctx context.Context, key string, opts ...clientv3.OpOption)
 	return h.Client.Get(ctx, key, opts...)
 }
 
-func (h *Holder) PutNx(ctx context.Context, key, value string, ttl int64) (*clientv3.TxnResponse, clientv3.LeaseID, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	leaseResp, err := h.Client.Grant(ctx, ttl)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	res, err := h.Client.Txn(ctx).
-		If(clientv3.Compare(clientv3.CreateRevision(key), "=", 0)).
-		Then(clientv3.OpPut(key, value, clientv3.WithLease(leaseResp.ID))).
-		Commit()
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return res, leaseResp.ID, nil
+func (h *Holder) Grant(ctx context.Context, ttl int64) (*clientv3.LeaseGrantResponse, error) {
+	return h.Client.Grant(ctx, ttl)
 }
 
-func (h *Holder) Add(ctx context.Context, prefix, key string, ttl int64) (leaseID clientv3.LeaseID, err error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+func (h *Holder) Put(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error) {
+	return h.Client.Put(ctx, key, val, opts...)
+}
 
+func (h *Holder) PutNx(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.TxnResponse, error) {
+	return h.Client.Txn(ctx).
+		If(clientv3.Compare(clientv3.CreateRevision(key), "=", 0)).
+		Then(clientv3.OpPut(key, val, opts...)).
+		Commit()
+}
+
+func (h *Holder) Add(ctx context.Context, prefix, key, addr string, opts ...clientv3.OpOption) error {
 	em, err := endpoints.NewManager(h.Client, prefix)
 	if err != nil {
-		return
+		return err
 	}
 
-	leaseResp, err := h.Client.Grant(ctx, ttl)
-	if err != nil {
-		return
-	}
-
-	err = em.AddEndpoint(
+	return em.AddEndpoint(
 		ctx,
 		key,
-		endpoints.Endpoint{Addr: h.Addr},
-		clientv3.WithLease(leaseResp.ID),
+		endpoints.Endpoint{Addr: addr},
+		opts...,
 	)
-	if err != nil {
-		return
-	}
-
-	return leaseResp.ID, nil
 }
 
 func (h *Holder) Dial(ctx context.Context, servicePrefix string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
@@ -139,11 +119,6 @@ func (h *Holder) KeepAlive(ctx context.Context, leaseID clientv3.LeaseID, key st
 	}
 }
 
-func (h *Holder) Delete(ctx context.Context, key string, opts ...clientv3.OpOption) error {
-	_, err := h.Client.Delete(ctx, key, opts...)
-	if err != nil {
-		return err
-	}
-
-	return nil
+func (h *Holder) Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error) {
+	return h.Client.Delete(ctx, key, opts...)
 }
