@@ -30,6 +30,7 @@ type Holder struct {
 
 type Option struct {
 	Logger zerolog.Logger
+	*clientv3.Config
 	*EtcdOption
 }
 
@@ -40,11 +41,8 @@ type EtcdOption struct {
 	Password  string
 }
 
-func New(opt *Option) (Handler, error) {
-	c, err := clientv3.New(clientv3.Config{
-		Endpoints:   opt.Endpoints,
-		DialTimeout: opt.Timeout,
-	})
+func New(ctx context.Context, opt *Option) (Handler, error) {
+	c, err := clientv3.New(*opt.Config)
 	if err != nil {
 		return nil, err
 	}
