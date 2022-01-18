@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/rs/zerolog"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -25,20 +24,11 @@ type Handler interface {
 type Holder struct {
 	Client *clientv3.Client
 	Logger zerolog.Logger
-	*EtcdOption
 }
 
 type Option struct {
 	Logger zerolog.Logger
 	*clientv3.Config
-	*EtcdOption
-}
-
-type EtcdOption struct {
-	Endpoints []string
-	Timeout   time.Duration
-	Username  string
-	Password  string
 }
 
 func New(ctx context.Context, opt *Option) (Handler, error) {
@@ -48,9 +38,8 @@ func New(ctx context.Context, opt *Option) (Handler, error) {
 	}
 
 	return &Holder{
-		Client:     c,
-		Logger:     opt.Logger,
-		EtcdOption: opt.EtcdOption,
+		Client: c,
+		Logger: opt.Logger,
 	}, nil
 }
 
@@ -93,7 +82,7 @@ func (h *Holder) Dial(ctx context.Context, servicePrefix string, opts ...grpc.Di
 		return nil, err
 	}
 
-	opts = append(opts, grpc.WithResolvers(etcdResolver), grpc.WithInsecure(), grpc.WithBlock(), grpc.WithDisableRetry())
+	opts = append(opts, grpc.WithResolvers(etcdResolver), grpc.WithBlock(), grpc.WithDisableRetry(), grpc.WithInsecure())
 
 	return grpc.DialContext(ctx, "etcd:///"+servicePrefix, opts...)
 }
