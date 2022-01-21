@@ -19,6 +19,7 @@ type Handler interface {
 	Dial(ctx context.Context, servicePrefix string, opts ...grpc.DialOption) (*grpc.ClientConn, error)
 	KeepAlive(ctx context.Context, leaseID clientv3.LeaseID, key string) error
 	Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error)
+	GetClient() *clientv3.Client
 }
 
 type Holder struct {
@@ -108,4 +109,8 @@ func (h *Holder) KeepAlive(ctx context.Context, leaseID clientv3.LeaseID, key st
 
 func (h *Holder) Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error) {
 	return h.Client.Delete(ctx, key, opts...)
+}
+
+func (h *Holder) GetClient() *clientv3.Client {
+	return h.Client
 }
